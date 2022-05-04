@@ -31,6 +31,9 @@ public abstract class ClickHouseDataProcessor {
     protected static final String ERROR_REACHED_END_OF_STREAM = "Reached end of the stream when reading column #%d of %d: %s";
     protected static final String ERROR_UNKNOWN_DATA_TYPE = "Unsupported data type: ";
 
+    protected static final int READ_AND_FILL_OK = 0;
+    protected static final int READ_AND_FILL_EMPTY = 1;
+
     // not a fan of Java generics :<
     protected static void buildAggMappings(
             Map<ClickHouseAggregateFunction, ClickHouseDeserializer<ClickHouseValue>> deserializers,
@@ -71,12 +74,15 @@ public abstract class ClickHouseDataProcessor {
     protected final Iterator<ClickHouseRecord> records;
     protected final Iterator<ClickHouseValue> values;
     // protected final Object writer;
+    protected ClickHouseRecord totals;
+    protected ClickHouseRecord[] extremes;
 
     /**
      * Column index shared by {@link #read(ClickHouseValue, ClickHouseColumn)},
      * {@link #records()}, and {@link #values()}.
      */
     protected int readPosition;
+
     /**
      * Column index shared by {@link #write(ClickHouseValue, ClickHouseColumn)}.
      */
@@ -119,8 +125,11 @@ public abstract class ClickHouseDataProcessor {
             public ClickHouseRecord next() {
                 ClickHouseRecord currentRecord = factory.get();
                 try {
-                    readAndFill(currentRecord);
+                    int readResult = readAndFill(currentRecord);
                     readPosition = 0;
+                    if (readResult == READ_AND_FILL_EMPTY) {
+                        return ClickHouseRecord.EMPTY;
+                    }
                 } catch (EOFException e) {
                     if (readPosition == 0) { // end of the stream, which is fine
                         throw new NoSuchElementException("No more record");
@@ -197,11 +206,13 @@ public abstract class ClickHouseDataProcessor {
      *
      * @param r non-null record to fill
      * @throws IOException when failed to read columns from input stream
+     * @return
      */
-    protected void readAndFill(ClickHouseRecord r) throws IOException {
+    protected int readAndFill(ClickHouseRecord r) throws IOException {
         for (; readPosition < columns.length; readPosition++) {
             readAndFill(r.getValue(readPosition), columns[readPosition]);
         }
+        return READ_AND_FILL_OK;
     }
 
     /**
@@ -213,8 +224,9 @@ public abstract class ClickHouseDataProcessor {
      * @param value  non-null value object to fill
      * @param column non-null type of the value
      * @throws IOException when failed to read column from input stream
+     * @return
      */
-    protected abstract void readAndFill(ClickHouseValue value, ClickHouseColumn column) throws IOException;
+    protected abstract int readAndFill(ClickHouseValue value, ClickHouseColumn column) throws IOException;
 
     /**
      * Reads columns from input stream. Usually this will be only called once during
@@ -315,6 +327,14 @@ public abstract class ClickHouseDataProcessor {
         }
 
         return () -> records;
+    }
+
+    public ClickHouseRecord totals() {
+        return totals;
+    }
+
+    public ClickHouseRecord[] extremes() {
+        return extremes;
     }
 
     /**

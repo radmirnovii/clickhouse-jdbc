@@ -490,16 +490,18 @@ public class ClickHouseRowBinaryProcessor extends ClickHouseDataProcessor {
     }
 
     @Override
-    protected void readAndFill(ClickHouseRecord r) throws IOException {
+    protected int readAndFill(ClickHouseRecord r) throws IOException {
         MappedFunctions m = getMappedFunctions();
         for (; readPosition < columns.length; readPosition++) {
             templates[readPosition] = m.deserialize(r.getValue(readPosition), config, columns[readPosition], input);
         }
+        return READ_AND_FILL_OK;
     }
 
     @Override
-    protected void readAndFill(ClickHouseValue value, ClickHouseColumn column) throws IOException {
+    protected int readAndFill(ClickHouseValue value, ClickHouseColumn column) throws IOException {
         templates[readPosition] = getMappedFunctions().deserialize(value, config, column, input);
+        return READ_AND_FILL_OK;
     }
 
     @Override

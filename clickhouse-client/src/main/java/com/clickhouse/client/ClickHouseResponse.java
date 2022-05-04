@@ -55,6 +55,16 @@ public interface ClickHouseResponse extends AutoCloseable, Serializable {
         }
 
         @Override
+        public ClickHouseRecord totals() {
+            return null;
+        }
+
+        @Override
+        public ClickHouseRecord[] extremes() {
+            return null;
+        }
+
+        @Override
         public void close() {
             // do nothing
         }
@@ -112,6 +122,10 @@ public interface ClickHouseResponse extends AutoCloseable, Serializable {
      * @return non-null iterable collection
      */
     Iterable<ClickHouseRecord> records();
+
+    ClickHouseRecord totals();
+
+    ClickHouseRecord[] extremes();
 
     /**
      * Pipes the contents of this response into the given output stream.

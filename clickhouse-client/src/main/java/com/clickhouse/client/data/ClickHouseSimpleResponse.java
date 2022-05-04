@@ -178,6 +178,16 @@ public class ClickHouseSimpleResponse implements ClickHouseResponse {
     }
 
     @Override
+    public ClickHouseRecord totals() {
+        return null;
+    }
+
+    @Override
+    public ClickHouseRecord[] extremes() {
+        return null;
+    }
+
+    @Override
     public void close() {
         // nothing to close
         isClosed = true;

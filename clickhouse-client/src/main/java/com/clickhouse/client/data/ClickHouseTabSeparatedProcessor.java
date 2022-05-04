@@ -6,6 +6,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.EnumMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 
@@ -225,13 +226,17 @@ public class ClickHouseTabSeparatedProcessor extends ClickHouseDataProcessor {
     }
 
     @Override
-    protected void readAndFill(ClickHouseRecord r) throws IOException {
+    protected int readAndFill(ClickHouseRecord r) throws IOException {
         ClickHouseByteBuffer buf = input.readCustom(getTextHandler()::readLine);
         if (buf.isEmpty() && input.available() < 1) {
             throw new EOFException();
         }
         currentRow = new ByteFragment(buf.array(), buf.position(),
                 buf.lastByte() == getTextHandler().rowDelimiter ? buf.length() - 1 : buf.length());
+
+        if (currentRow.length() == 0) {
+            return READ_AND_FILL_EMPTY;
+        }
 
         int index = readPosition;
         byte delimiter = getTextHandler().colDelimiter;
@@ -244,16 +249,18 @@ public class ClickHouseTabSeparatedProcessor extends ClickHouseDataProcessor {
         for (; readPosition < columns.length; readPosition++) {
             r.getValue(readPosition).update(currentCols[readPosition - index].asString(true));
         }
+
+        return READ_AND_FILL_OK;
     }
 
     @Override
-    protected void readAndFill(ClickHouseValue value, ClickHouseColumn column) throws IOException {
+    protected int readAndFill(ClickHouseValue value, ClickHouseColumn column) throws IOException {
         throw new UnsupportedOperationException();
     }
 
     @Override
     protected List<ClickHouseColumn> readColumns() throws IOException {
-        if (input == null) {
+        if (input == null) {                ;
             return Collections.emptyList();
         }
 
@@ -310,5 +317,59 @@ public class ClickHouseTabSeparatedProcessor extends ClickHouseDataProcessor {
         }
         output.writeBytes(value.isNullOrEmpty() ? TextHandler.NULL : value.asBinary());
         output.writeCustom(column.isLastColumn() ? getTextHandler()::writeLine : getTextHandler()::writeColumn);
+    }
+
+    @Override
+    protected Iterator<ClickHouseRecord> initRecords() {
+        Iterator<ClickHouseRecord> baseIterator = super.initRecords();
+
+        // checking one record ahead iterator
+        return new Iterator<ClickHouseRecord>() {
+            private boolean prevHasNext = baseIterator.hasNext();
+            private ClickHouseRecord prevRecord = prevHasNext ? baseIterator.next() : null;
+
+            @Override
+            public boolean hasNext() {
+                // checking that next line not EMPTY record
+                return prevHasNext;
+            }
+
+            @Override
+            public ClickHouseRecord next() {
+                ClickHouseRecord result = prevRecord;
+
+                prevHasNext = baseIterator.hasNext();
+                prevRecord = prevHasNext ? baseIterator.next() : null;
+
+                // check if record is empty
+                if (prevHasNext && prevRecord.size() == 0) {
+                    prevHasNext = false;
+                    readExtremesAndTotals(baseIterator);
+                }
+
+                return result;
+            }
+        };
+    }
+
+    private void readExtremesAndTotals(Iterator<ClickHouseRecord> allRecords) {
+        List<ClickHouseRecord> remainingRecords = new ArrayList<>(4);
+        allRecords.forEachRemaining(record -> remainingRecords.add(record.copy()));
+
+        if (remainingRecords.size() == 1) {
+            // there is only totals line
+            totals = remainingRecords.get(0);
+        } else if (remainingRecords.size() == 2) {
+            // there is only extremes line
+            extremes = new ClickHouseRecord[2];
+            remainingRecords.toArray(extremes);
+        } else {
+            // totals, empty and extremes lines;
+            totals = remainingRecords.get(0);
+            extremes = new ClickHouseRecord[2];
+            extremes[0] = remainingRecords.get(2);
+            extremes[1] = remainingRecords.get(3);
+        }
+
     }
 }
